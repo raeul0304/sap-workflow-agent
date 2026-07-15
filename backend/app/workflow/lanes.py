@@ -1,0 +1,1 @@
+#SpiffWorkflow Data 및 Lane 매핑 정의 ( Spiff Task 객체에서 BPMN Lane 이름만 추출 (역할/권한 판단은 하지 않음)

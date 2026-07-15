@@ -1,0 +1,1 @@
+# LangGraph State 정의 (signal, current_user, pending_task 등) - # State 스키마 (TypedDict/Pydantic)

@@ -1,0 +1,290 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions
+    xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
+    id="Definitions_SignalPermissionDemo"
+    targetNamespace="http://example.com/spiffworkflow">
+
+  <bpmn:process
+      id="signal_permission_demo"
+      name="Signal and Permission Demo"
+      isExecutable="true">
+
+    <!--
+      Lane은 Task가 어느 역할 영역에 속하는지를 표현한다.
+      실제 Lane-Role 권한 검사는 guardian.py에서 수행한다.
+    -->
+    <bpmn:laneSet id="LaneSet_Main">
+
+      <bpmn:lane id="Lane_SYSTEM" name="SYSTEM">
+        <bpmn:flowNodeRef>StartEvent_Main</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Signal</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Hello</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_GetCurrentTime</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_InvalidSignal</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_RequesterRole</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_ApprovalDecision</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_HelloName</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Main</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_USER" name="USER">
+        <bpmn:flowNodeRef>UserTask_EnterName</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_ADMIN" name="ADMIN">
+        <bpmn:flowNodeRef>UserTask_ApproveName</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+    </bpmn:laneSet>
+
+    <!-- 시작 -->
+    <bpmn:startEvent id="StartEvent_Main" name="Start">
+      <bpmn:outgoing>Flow_Start_To_Signal</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:sequenceFlow
+        id="Flow_Start_To_Signal"
+        sourceRef="StartEvent_Main"
+        targetRef="Gateway_Signal" />
+
+    <!-- signal A/B/C 분기 -->
+    <bpmn:exclusiveGateway
+        id="Gateway_Signal"
+        name="Select signal route"
+        default="Flow_Signal_Invalid">
+
+      <bpmn:incoming>Flow_Start_To_Signal</bpmn:incoming>
+
+      <bpmn:outgoing>Flow_Signal_A</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Signal_B</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Signal_C</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Signal_Invalid</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- A 경로 -->
+    <bpmn:sequenceFlow
+        id="Flow_Signal_A"
+        name="A"
+        sourceRef="Gateway_Signal"
+        targetRef="Task_Hello">
+
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">
+        signal == 'A'
+      </bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:scriptTask
+        id="Task_Hello"
+        name="Print Hello"
+        scriptFormat="python">
+
+      <bpmn:incoming>Flow_Signal_A</bpmn:incoming>
+      <bpmn:outgoing>Flow_Hello_To_End</bpmn:outgoing>
+
+      <bpmn:script>
+result_message = "Hello"
+workflow_status = "COMPLETED"
+print(result_message)
+      </bpmn:script>
+    </bpmn:scriptTask>
+
+    <bpmn:sequenceFlow
+        id="Flow_Hello_To_End"
+        sourceRef="Task_Hello"
+        targetRef="EndEvent_Main" />
+
+    <!-- B 경로 -->
+    <bpmn:sequenceFlow
+        id="Flow_Signal_B"
+        name="B"
+        sourceRef="Gateway_Signal"
+        targetRef="Task_GetCurrentTime">
+
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">
+        signal == 'B'
+      </bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <!--
+      Tool 호출은 spiff_engine.py의 ToolServiceEnvironment.call_service()에서 처리한다.
+      operation_name("get_current_time")으로 TOOL_REGISTRY에서 함수를 찾는다.
+    -->
+    <bpmn:serviceTask
+        id="Task_GetCurrentTime"
+        name="Get current time">
+
+      <bpmn:incoming>Flow_Signal_B</bpmn:incoming>
+      <bpmn:outgoing>Flow_Time_To_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:sequenceFlow
+        id="Flow_Time_To_End"
+        sourceRef="Task_GetCurrentTime"
+        targetRef="EndEvent_Main" />
+
+    <!-- C 경로 -->
+    <bpmn:sequenceFlow
+        id="Flow_Signal_C"
+        name="C"
+        sourceRef="Gateway_Signal"
+        targetRef="UserTask_EnterName">
+
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">
+        signal == 'C'
+      </bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <!-- USER Lane Human Task -->
+    <bpmn:userTask
+        id="UserTask_EnterName"
+        name="What is your name?">
+
+      <!-- 최초 C 진입과 관리자 반려 후 재진입 -->
+      <bpmn:incoming>Flow_Signal_C</bpmn:incoming>
+      <bpmn:incoming>Flow_Approval_Rejected</bpmn:incoming>
+
+      <bpmn:outgoing>Flow_Name_To_Role</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:sequenceFlow
+        id="Flow_Name_To_Role"
+        sourceRef="UserTask_EnterName"
+        targetRef="Gateway_RequesterRole" />
+
+    <!-- 요청자의 역할에 따른 경로 분기 -->
+    <bpmn:exclusiveGateway
+        id="Gateway_RequesterRole"
+        name="Is requester an admin?"
+        default="Flow_Role_User">
+
+      <bpmn:incoming>Flow_Name_To_Role</bpmn:incoming>
+
+      <bpmn:outgoing>Flow_Role_Admin</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Role_User</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- ADMIN 요청자는 승인 생략 -->
+    <bpmn:sequenceFlow
+        id="Flow_Role_Admin"
+        name="ADMIN"
+        sourceRef="Gateway_RequesterRole"
+        targetRef="Task_HelloName">
+
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">
+        'ADMIN' in requester_roles
+      </bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <!-- USER 요청자는 관리자 승인 필요 -->
+    <bpmn:sequenceFlow
+        id="Flow_Role_User"
+        name="Approval required"
+        sourceRef="Gateway_RequesterRole"
+        targetRef="UserTask_ApproveName" />
+
+    <!-- ADMIN Lane Human Task -->
+    <bpmn:userTask
+        id="UserTask_ApproveName"
+        name="Approve name usage">
+
+      <bpmn:incoming>Flow_Role_User</bpmn:incoming>
+      <bpmn:outgoing>Flow_Approval_To_Decision</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:sequenceFlow
+        id="Flow_Approval_To_Decision"
+        sourceRef="UserTask_ApproveName"
+        targetRef="Gateway_ApprovalDecision" />
+
+    <!-- 승인·반려 분기 -->
+    <bpmn:exclusiveGateway
+        id="Gateway_ApprovalDecision"
+        name="Approval decision"
+        default="Flow_Approval_Rejected">
+
+      <bpmn:incoming>Flow_Approval_To_Decision</bpmn:incoming>
+
+      <bpmn:outgoing>Flow_Approval_Approved</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Approval_Rejected</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:sequenceFlow
+        id="Flow_Approval_Approved"
+        name="APPROVE"
+        sourceRef="Gateway_ApprovalDecision"
+        targetRef="Task_HelloName">
+
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">
+        approval_decision == 'APPROVE'
+      </bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow
+        id="Flow_Approval_Rejected"
+        name="REJECT"
+        sourceRef="Gateway_ApprovalDecision"
+        targetRef="UserTask_EnterName" />
+
+    <!-- 이름 출력 -->
+    <bpmn:scriptTask
+        id="Task_HelloName"
+        name="Print greeting"
+        scriptFormat="python">
+
+      <bpmn:incoming>Flow_Role_Admin</bpmn:incoming>
+      <bpmn:incoming>Flow_Approval_Approved</bpmn:incoming>
+
+      <bpmn:outgoing>Flow_HelloName_To_End</bpmn:outgoing>
+
+      <bpmn:script>
+result_message = f"Hello, {name}"
+workflow_status = "COMPLETED"
+print(result_message)
+      </bpmn:script>
+    </bpmn:scriptTask>
+
+    <bpmn:sequenceFlow
+        id="Flow_HelloName_To_End"
+        sourceRef="Task_HelloName"
+        targetRef="EndEvent_Main" />
+
+    <!-- A/B/C 이외의 값 -->
+    <bpmn:sequenceFlow
+        id="Flow_Signal_Invalid"
+        name="Unsupported"
+        sourceRef="Gateway_Signal"
+        targetRef="Task_InvalidSignal" />
+
+    <bpmn:scriptTask
+        id="Task_InvalidSignal"
+        name="Handle unsupported signal"
+        scriptFormat="python">
+
+      <bpmn:incoming>Flow_Signal_Invalid</bpmn:incoming>
+      <bpmn:outgoing>Flow_Invalid_To_End</bpmn:outgoing>
+
+      <bpmn:script>
+workflow_status = "FAILED"
+error_code = "UNSUPPORTED_SIGNAL"
+error_message = f"Unsupported signal: {signal}"
+      </bpmn:script>
+    </bpmn:scriptTask>
+
+    <bpmn:sequenceFlow
+        id="Flow_Invalid_To_End"
+        sourceRef="Task_InvalidSignal"
+        targetRef="EndEvent_Main" />
+
+    <!-- 종료 -->
+    <bpmn:endEvent id="EndEvent_Main" name="End">
+
+      <bpmn:incoming>Flow_Hello_To_End</bpmn:incoming>
+      <bpmn:incoming>Flow_Time_To_End</bpmn:incoming>
+      <bpmn:incoming>Flow_HelloName_To_End</bpmn:incoming>
+      <bpmn:incoming>Flow_Invalid_To_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+  </bpmn:process>
+</bpmn:definitions>

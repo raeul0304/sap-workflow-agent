@@ -1,0 +1,1 @@
+# User 역할과 BPMN Lane 일치 여부 검증 (Lane-Role 매핑 + 검증 로직을 모두 여기로 흡수)
