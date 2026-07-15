@@ -70,9 +70,7 @@
         sourceRef="Gateway_Signal"
         targetRef="Task_Hello">
 
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">
-        signal == 'A'
-      </bpmn:conditionExpression>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">signal == 'A'</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
 
     <bpmn:scriptTask
@@ -102,9 +100,7 @@ print(result_message)
         sourceRef="Gateway_Signal"
         targetRef="Task_GetCurrentTime">
 
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">
-        signal == 'B'
-      </bpmn:conditionExpression>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">signal == 'B'</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
 
     <!--
@@ -114,6 +110,14 @@ print(result_message)
     <bpmn:serviceTask
         id="Task_GetCurrentTime"
         name="Get current time">
+
+        <bpmn:extensionElements>
+            <spiffworkflow:serviceTaskOperator
+                id="get_current_time"
+                resultVariable="tool_result">
+            <spiffworkflow:parameters />
+            </spiffworkflow:serviceTaskOperator>
+        </bpmn:extensionElements>
 
       <bpmn:incoming>Flow_Signal_B</bpmn:incoming>
       <bpmn:outgoing>Flow_Time_To_End</bpmn:outgoing>
@@ -131,9 +135,7 @@ print(result_message)
         sourceRef="Gateway_Signal"
         targetRef="UserTask_EnterName">
 
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">
-        signal == 'C'
-      </bpmn:conditionExpression>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">signal == 'C'</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
 
     <!-- USER Lane Human Task -->

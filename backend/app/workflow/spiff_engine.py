@@ -22,9 +22,10 @@ from app.workflow.store import InMemoryWorkflowStore, workflow_store
 class WorkflowTaskNotFoundError(KeyError):
     """workflow 내에서 특정 task_id를 찾지 못했을 때 발생"""
 
-    def __init__(self, task_id: str):
+    def __init__(self, workflow_id: str, task_id: str):
+        self.workflow_id = workflow_id
         self.task_id = task_id
-        super().__init__(f"Task를 찾을 수 없습니다: {task_id}")
+        super().__init__(f"Task를 찾을 수 없습니다: {task_id} - (workflow_id : {workflow_id})")
 
 class ToolNotFoundError(LookupError):
     """Service Task에 지정된 Tool을 찾지 못했을 때 발생"""
@@ -51,7 +52,7 @@ class WorkflowExecutionResult:
     """워크플로 실행 또는 재개 결과"""
     
     workflow_id: str
-    status: bool
+    status: str
     data: dict[str, Any]
     human_tasks: tuple[HumanTaskInfo, ...]
 
@@ -76,7 +77,7 @@ class ToolServiceEnvironment(TaskDataEnvironment):
         """SpiffWorkflow의 Service Task에서 전달된 operation_params를 Tool 호출에 맞게 변환"""
         normalized_params = {}
 
-        for name, parameter in operation_params.iems():
+        for name, parameter in operation_params.items():
             if isinstance(parameter, dict) and "value" in parameter:
                 normalized_params[name] = parameter["value"]
             else:
@@ -101,7 +102,11 @@ class SpiffEngine:
             raise FileNotFoundError(f"BPMN 파일을 찾을 수 없습니다: {self.bpmn_path}")
         
         parser = SpiffBpmnParser()
-        parser.add_bpmn_file(str(self.bpmn_path))
+        with self.bpmn_path.open("rb") as bpmn_file:
+            parser.add_bpmn_io(
+                bpmn_file,
+                filename=str(self.bpmn_path),
+            )
 
         return parser.get_spec(self.process_id)
     
@@ -112,33 +117,51 @@ class SpiffEngine:
         return PythonScriptEngine(environment=ToolServiceEnvironment())
     
 
-    def start(self, *, signal: str, requester_id: str, requester_roles: Iterable[str],) -> WorkflowExecutionResult:
-        """워크플로를 새로 시작하고, Human Task에 도달하면 실행을 멈추고 워크플로를 저장"""
-        
-        normalized_requester_roles = normalize_roles(requester_roles)
-        workflow = BpmnWorkflow(self._workflow_spec, script_engine = self._create_script_engine())
+    def start(
+        self,
+        *,
+        signal: str,
+        requester_id: str,
+        requester_roles: Iterable[str],
+    ) -> WorkflowExecutionResult:
+        """워크플로를 새로 시작하고 Human Task에 도달할 때까지 실행."""
 
-        workflow.data.update(
-            {
-                "signal": signal.strip().upper(),
-                "requester_id": requester_id,
-                "requester_roles": sorted(normalized_requester_roles),
-                "workflow_status": "RUNNING"
-            }
+        normalized_requester_roles = normalize_roles(requester_roles)
+
+        initial_data = {
+            "signal": signal.strip().upper(),
+            "requester_id": requester_id,
+            "requester_roles": sorted(normalized_requester_roles),
+            "workflow_status": "RUNNING",
+        }
+
+        # 현재 설치된 SpiffWorkflow 버전은 data 인자를 지원하지 않음
+        workflow = BpmnWorkflow(
+            self._workflow_spec,
+            script_engine=self._create_script_engine(),
         )
 
-        # 엔진이 처리할 수 있는 자동 Task 실행 (Start Event, Gateway, Script/Service Task)
+        # Task 간에 전달될 실행 데이터를 시작 Task에 설정
+        workflow.task_tree.set_data(**initial_data)
+
+        # 응답 및 workflow 수준에서도 조회할 수 있도록 보관
+        workflow.data.update(initial_data)
+
         workflow.do_engine_steps()
+
         workflow_id = self.store.create(workflow)
 
-        return self._build_result(workflow_id=workflow_id, workflow=workflow)
+        return self._build_result(
+            workflow_id=workflow_id,
+            workflow=workflow,
+        )
     
 
     def complete_human_task(self, *, workflow_id: str, task_id: str, actor_roles: Iterable[str], task_data: Mapping[str, Any]) -> WorkflowExecutionResult:
         """Human Task에 사용자 입력을 반영하고 워크플로를 재개 - Human Task 수행 권한 검증 후, Task 완료 및 엔진 재개"""
         
         workflow = self.store.get(workflow_id)
-        task = self._find_ready_human_task(workflow, workflow_id, task_id)
+        task = self._find_ready_human_task(workflow=workflow, workflow_id=workflow_id, task_id=task_id)
 
         # Lane 및 Task 수행 권한 검증
         ensure_task_access(task, actor_roles)
@@ -197,11 +220,13 @@ class SpiffEngine:
         human_tasks = self._get_ready_human_tasks(workflow)
         
         if workflow.is_completed():
-            status = str(workflow.data.get("workflow_status", "COMPLETED"))
+            status = "COMPLETED"
         elif human_tasks:
             status = "WAITING"
         else:
-            status = str(workflow.data.get("workflow_stats", "RUNNING"))
+            status = "RUNNING"
+
+        workflow.data["workflow_status"] = status
 
         return WorkflowExecutionResult(
             workflow_id = workflow_id,
