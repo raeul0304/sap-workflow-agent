@@ -174,9 +174,7 @@ print(result_message)
         sourceRef="Gateway_RequesterRole"
         targetRef="Task_HelloName">
 
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">
-        'ADMIN' in requester_roles
-      </bpmn:conditionExpression>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">'ADMIN' in requester_roles</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
 
     <!-- USER 요청자는 관리자 승인 필요 -->
@@ -218,9 +216,7 @@ print(result_message)
         sourceRef="Gateway_ApprovalDecision"
         targetRef="Task_HelloName">
 
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">
-        approval_decision == 'APPROVE'
-      </bpmn:conditionExpression>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">approval_decision == 'APPROVE'</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
 
     <bpmn:sequenceFlow
