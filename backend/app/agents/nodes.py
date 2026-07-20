@@ -85,9 +85,8 @@ class WorkflowNodes:
             result = self.spiff_engine.complete_human_task(
                 workflow_id=workflow_id,
                 task_id=pending_task["task_id"],
-                output=response["output"],
-                actor_id=response["actor_id"],
                 actor_roles=response["actor_roles"],
+                output=response["output"],
             )
         except Exception as exc:
             return {
