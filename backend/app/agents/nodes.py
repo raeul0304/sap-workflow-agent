@@ -1,10 +1,3 @@
-# start_workflow / poll_human_task / apply_human_input / finalize
-"""
-LLM 라우팅 결과를 바탕으로 SpiffWorkflow 시작. 
-SpiffWorkflow 실행 결과를 AgentState에 저장. 
-Human Task 발생 시 interrupt. 
-사용자 입력을 받아 SpiffWorkflow 재개"""
-
 from __future__ import annotations
 from dataclasses import asdict, is_dataclass
 from typing import Any, cast
@@ -18,6 +11,7 @@ class WorkflowNodes:
 
     def __init__(self, spiff_engine: SpiffEngine) -> None:
         self.spiff_engine = spiff_engine
+
 
     def start_workflow(self, state: AgentState) -> dict[str, Any]:
         """라우팅 결과를 이용해 새로운 SpiffWorkflow를 시작한다."""
@@ -47,6 +41,7 @@ class WorkflowNodes:
             }
 
         return self._result_to_state(result)
+
 
     def handle_human_task(self, state: AgentState) -> dict[str, Any]:
         """현재 대기 중인 Human Task에 대해 사용자 입력을 받는다."""
@@ -105,6 +100,7 @@ class WorkflowNodes:
             "human_task_response": response,
         }
 
+
     def build_final_response(self, state: AgentState) -> dict[str, Any]:
         """완료된 워크플로 결과를 최종 사용자 응답으로 변환한다."""
         status = state.get("status")
@@ -133,6 +129,7 @@ class WorkflowNodes:
             "final_response": final_response,
         }
 
+
     @staticmethod
     def _result_to_state(
         result: WorkflowExecutionResult,
@@ -150,6 +147,7 @@ class WorkflowNodes:
             "human_tasks": human_tasks,
             "error": None,
         }
+
 
     @staticmethod
     def _human_task_to_payload(
@@ -174,6 +172,7 @@ class WorkflowNodes:
             task_name=str(task_data["task_name"]),
             lane=task_data.get("lane"),
         )
+
 
     @staticmethod
     def _validate_human_task_response(
