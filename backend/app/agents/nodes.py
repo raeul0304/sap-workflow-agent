@@ -41,7 +41,10 @@ class WorkflowNodes:
                 "error": str(exc),
             }
 
-        return self._result_to_state(result)
+        return {
+            **self._result_to_state(result),
+            "workflow_type": workflow_type
+        }
 
 
     def handle_human_task(self, state: AgentState) -> dict[str, Any]:

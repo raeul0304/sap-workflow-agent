@@ -1,16 +1,16 @@
-# tests/unit/agents/test_graph_scenario_a.py
+# tests/unit/agents/test_graph_scenario_b.py
 
 
-def test_graph_scenario_a(
+def test_graph_scenario_b(
     workflow_graph,
     make_initial_state,
     make_config,
 ):
-    config = make_config("graph-scenario-a")
+    config = make_config("graph-scenario-b")
 
     initial_state = make_initial_state(
-        signal="A",
-        user_id="user-001",
+        signal="B",
+        user_id="user-002",
         roles=["USER"],
     )
 
@@ -21,15 +21,16 @@ def test_graph_scenario_a(
 
     print(result)
 
-    assert result["status"] == "COMPLETED", result.get("error")
+    assert result["status"] == "COMPLETED"
     assert result["workflow_id"]
     assert result["human_tasks"] == []
 
-    assert result["data"]["signal"] == "A"
-    assert result["data"]["requester_id"] == "user-001"
-    assert result["data"]["result_message"] == "Hello"
+    assert result["data"]["signal"] == "B"
+    assert result["data"]["requester_id"] == "user-002"
 
-    assert result["final_response"] == "Hello"
+    assert "tool_result" in result["data"]
+    assert result["data"]["tool_result"]
+
     assert result["error"] is None
 
     snapshot = workflow_graph.get_state(config)
