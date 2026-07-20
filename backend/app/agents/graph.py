@@ -8,6 +8,7 @@ from langgraph.graph import END, START, StateGraph
 from app.agents.nodes import WorkflowNodes
 from app.agents.state import AgentState
 from app.workflow.spiff_engine import SpiffEngine
+from app.workflow.registry import WorkflowRegistry
 
 NextNode = Literal["handle_human_task", "build_final_response"]
 
@@ -26,9 +27,9 @@ def route_by_workflow_status(state: AgentState) -> NextNode:
     )
 
 
-def build_graph(spiff_engine: SpiffEngine, *, checkpointer: BaseCheckpointSaver[Any] | None = None) -> Any:
+def build_graph(workflow_registry: WorkflowRegistry, *, checkpointer: BaseCheckpointSaver[Any] | None = None) -> Any:
     """SpiffEngine을 사용하는 LangGraph 실행 그래프 생성"""
-    nodes = WorkflowNodes(spiff_engine)
+    nodes = WorkflowNodes(workflow_registry)
     graph_builder = StateGraph(AgentState)
 
     graph_builder.add_node(
@@ -42,7 +43,7 @@ def build_graph(spiff_engine: SpiffEngine, *, checkpointer: BaseCheckpointSaver[
     )
 
     graph_builder.add_node(
-        "build_final_reponse",
+        "build_final_response",
         nodes.build_final_response
     )
 

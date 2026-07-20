@@ -4,13 +4,14 @@ from typing import Any, cast
 from langgraph.types import interrupt
 from app.agents.state import AgentState, HumanTaskPayload, HumanTaskResponse, RoutingResult
 from app.workflow.spiff_engine import HumanTaskInfo, SpiffEngine, WorkflowExecutionResult
+from app.workflow.registry import WorkflowRegistry
 
 
 class WorkflowNodes:
     """SpiffWorkflow 실행과 관련된 LangGraph 노드."""
 
-    def __init__(self, spiff_engine: SpiffEngine) -> None:
-        self.spiff_engine = spiff_engine
+    def __init__(self, workflow_registry: WorkflowRegistry) -> None:
+        self.workflow_registry = workflow_registry
 
 
     def start_workflow(self, state: AgentState) -> dict[str, Any]:
@@ -24,16 +25,16 @@ class WorkflowNodes:
             }
 
         requester = state["requester"]
-
+        workflow_type = routing["workflow_type"]
         workflow_input = {
             **routing["parameters"],
             "requester_id": requester["user_id"],
             "requester_roles": requester["roles"],
-            "workflow_type": routing["workflow_type"],
         }
 
         try:
-            result = self.spiff_engine.start(**workflow_input)
+            spiff_engine = self.workflow_registry.get(workflow_type)
+            result = spiff_engine.start(**workflow_input)
         except Exception as exc:
             return {
                 "status": "FAILED",
@@ -45,8 +46,15 @@ class WorkflowNodes:
 
     def handle_human_task(self, state: AgentState) -> dict[str, Any]:
         """현재 대기 중인 Human Task에 대해 사용자 입력을 받는다."""
+        workflow_type = state.get("workflow_type")
         workflow_id = state.get("workflow_id")
         human_tasks = state.get("human_tasks", [])
+
+        if workflow_type is None:
+            return {
+                "status": "FAILED",
+                "error": "실행 중인 workflow_type이 없습니다.",
+            }
 
         if workflow_id is None:
             return {
@@ -62,7 +70,6 @@ class WorkflowNodes:
 
         # 현재 PoC에서는 동시에 여러 Human Task가 열리지 않는다고 가정한다.
         pending_task = human_tasks[0]
-
         resume_value = interrupt(
             {
                 "type": "human_task",
@@ -72,7 +79,6 @@ class WorkflowNodes:
         )
 
         response = cast(HumanTaskResponse, resume_value)
-
         validation_error = self._validate_human_task_response(response)
 
         if validation_error is not None:
@@ -82,11 +88,12 @@ class WorkflowNodes:
             }
 
         try:
-            result = self.spiff_engine.complete_human_task(
+            spiff_engine = self.workflow_registry.get(workflow_type)
+            result = spiff_engine.complete_human_task(
                 workflow_id=workflow_id,
                 task_id=pending_task["task_id"],
                 actor_roles=response["actor_roles"],
-                output=response["output"],
+                task_data=response["output"],
             )
         except Exception as exc:
             return {
@@ -96,6 +103,7 @@ class WorkflowNodes:
 
         return {
             **self._result_to_state(result),
+            "workflow_type": workflow_type,
             "human_task_response": response,
         }
 

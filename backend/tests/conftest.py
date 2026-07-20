@@ -4,6 +4,7 @@ import pytest
 
 from app.workflow.spiff_engine import SpiffEngine
 from app.workflow.store import InMemoryWorkflowStore
+from app.agents.graph import build_graph
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -26,3 +27,9 @@ def spiff_engine(
         process_id=PROCESS_ID,
         store=workflow_store,
     )
+
+
+@pytest.fixture
+def workflow_graph(spiff_engine: SpiffEngine):
+    """SpiffEngine이 연결된 Langgraph"""
+    return build_graph(spiff_engine)

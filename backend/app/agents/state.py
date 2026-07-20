@@ -42,6 +42,7 @@ class AgentState(TypedDict):
     routing: NotRequired[RoutingResult]
 
     # SpiffWorkflow 실행 상태
+    workflow_type: NotRequired[str]
     workflow_id: NotRequired[str]
     status: NotRequired[WorkflowStatus]
     human_tasks: NotRequired[list[HumanTaskPayload]]
