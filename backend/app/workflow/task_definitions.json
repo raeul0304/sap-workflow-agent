@@ -1,0 +1,21 @@
+[
+  {
+    "taskType": "read_dataset",
+    "label": "DB 데이터 조회",
+    "category": "DATABASE",
+    "bpmnElementType": "bpmn:ServiceTask",
+    "resultVariable": {
+      "required": true,
+      "defaultValue": "sap_result"
+    },
+    "fields": [
+      {
+        "key": "tableName",
+        "label": "테이블명",
+        "component": "text",
+        "valueType": "str",
+        "required": true
+      }
+    ]
+  }
+]
