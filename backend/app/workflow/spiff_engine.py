@@ -1,8 +1,8 @@
 # SpiffWorkflow 기반 BPMN 실행 엔진
-
+import io
+import re
 import json
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +16,8 @@ from app.tools.common import TOOL_REGISTRY
 from app.auth.guardian import ensure_task_access, normalize_roles
 from app.workflow.lanes import get_task_lane_info
 from app.workflow.store import InMemoryWorkflowStore, workflow_store
+from app.workflow.registry import WorkflowRegistry
+from app.workflow.schemas import BaseWorkflowPayload, HumanTaskInfo, WorkflowExecutionResult
 
 
 # ===== Custom Exceptions =====
@@ -36,31 +38,19 @@ class ToolNotFoundError(LookupError):
         super().__init__(f"등록되지 않은 Tool입니다: operation_name = {operation_name}")
 
 
-# ==== Data Classes ====
-@dataclass(frozen=True, slots=True)
-class HumanTaskInfo:
-    """Front에 전달할 Human Task 정보"""
-
-    task_id: str
-    bpmn_id: str | None
-    task_name: str
-    lane: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class WorkflowExecutionResult:
-    """워크플로 실행 또는 재개 결과"""
-    
-    workflow_id: str
-    status: str
-    data: dict[str, Any]
-    human_tasks: tuple[HumanTaskInfo, ...]
-
 
 
 # ==== Tool, Task 연결 ====
 class ToolServiceEnvironment(TaskDataEnvironment):
     """SpiffWorkflow의 TaskDataEnvironment를 상속하여, Service Task에서 Tool을 호출할 수 있도록 확장"""
+
+    def evaluate(self, expression: str, context: dict, external_context=None):
+        """eval 실패 시 원본 문자열을 그대로 반환"""
+        try:
+            return super().evaluate(expression, context, external_context)
+        except NameError:
+            return expression
+
 
     def call_service(self, task_data: dict[str, Any], operation_name: str, operation_params: dict[str, Any]) -> str:
         tool = TOOL_REGISTRY.get(operation_name)
@@ -101,14 +91,27 @@ class SpiffEngine:
         if not self.bpmn_path.is_file():
             raise FileNotFoundError(f"BPMN 파일을 찾을 수 없습니다: {self.bpmn_path}")
         
+        raw = self.bpmn_path.read_bytes()
+        normalized = self._normalize_spiff_tags(raw)
+        
         parser = SpiffBpmnParser()
         with self.bpmn_path.open("rb") as bpmn_file:
             parser.add_bpmn_io(
-                bpmn_file,
+                io.BytesIO(normalized),
                 filename=str(self.bpmn_path),
             )
 
         return parser.get_spec(self.process_id)
+    
+
+    @staticmethod
+    def _normalize_spiff_tags(xml_bytes: bytes) -> bytes:
+        """SpiffWorkflow 네임스페이스 태그명의 첫 글자를 소문자로 정규화"""
+        return re.sub(
+            rb"(</?spiffworkflow:)([A-Z])",
+            lambda m: m.group(1) + m.group(2).lower(),
+            xml_bytes,
+        )
     
 
     @staticmethod
@@ -120,32 +123,31 @@ class SpiffEngine:
     def start(
         self,
         *,
-        signal: str,
         requester_id: str,
         requester_roles: Iterable[str],
+        initial_data: dict[str, Any] | None = None,
     ) -> WorkflowExecutionResult:
         """워크플로를 새로 시작하고 Human Task에 도달할 때까지 실행."""
 
         normalized_requester_roles = normalize_roles(requester_roles)
 
-        initial_data = {
-            "signal": signal.strip().upper(),
+        workflow_data = {
             "requester_id": requester_id,
             "requester_roles": sorted(normalized_requester_roles),
             "workflow_status": "RUNNING",
         }
 
-        # 현재 설치된 SpiffWorkflow 버전은 data 인자를 지원하지 않음
+        if initial_data:
+            workflow_data.update(initial_data)
+
+         # 현재 설치된 SpiffWorkflow 버전은 data 인자를 지원하지 않음
         workflow = BpmnWorkflow(
             self._workflow_spec,
             script_engine=self._create_script_engine(),
         )
 
         # Task 간에 전달될 실행 데이터를 시작 Task에 설정
-        workflow.task_tree.set_data(**initial_data)
-
-        # 응답 및 workflow 수준에서도 조회할 수 있도록 보관
-        workflow.data.update(initial_data)
+        workflow.task_tree.set_data(**workflow_data)
 
         workflow.do_engine_steps()
 
@@ -238,3 +240,34 @@ class SpiffEngine:
 
     
     
+# ==== 워크플로 연계 실행 함수 ====
+def run_workflow(
+        *, 
+        registry: WorkflowRegistry, 
+        workflow_type: str, 
+        requester_id: str, 
+        requester_roles: Iterable[str],
+        payload: BaseWorkflowPayload | None = None,
+) -> WorkflowExecutionResult:
+    """registry에서 workflow_type에 맞는 엔진을 찾고, payload를 initial_data로 변환하여 실행까지 연결"""
+
+    engine = registry.get(workflow_type)
+    initial_data = payload.to_initial_data() if payload is not None else None
+
+    return engine.start(requester_id=requester_id, requester_roles=requester_roles, initial_data=initial_data)
+
+
+def resume_workflow(
+        *, 
+        registry: WorkflowRegistry,
+        workflow_type: str, 
+        workflow_id: str, 
+        task_id: str,
+        actor_roles: Iterable[str],
+        task_data: Mapping[str, Any]
+) -> WorkflowExecutionResult:
+    """workflow_type으로 엔진을 조회하고 Human Task를 완료하여 워크플로를 재개한다"""
+
+    engine = registry.get(workflow_type)
+
+    return engine.complete_human_task(workflow_id=workflow_id, task_id=task_id, actor_roles=actor_roles, task_data=task_data)

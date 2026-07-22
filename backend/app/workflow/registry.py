@@ -1,6 +1,10 @@
 # 워크플로 유형별 SpiffEngine Registry
 from __future__ import annotations
-from app.workflow.spiff_engine import SpiffEngine
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.workflow.spiff_engine import SpiffEngine
+
 
 class WorkflowNotRegisteredError(LookupError):
     """등록되지 않은 workflow_type을 요청했을 때 핸들링"""

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<bpmn:definitions
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+    xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+    xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+    xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
+    xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+    id="Definitions_1"
+    targetNamespace="http://bpmn.io/schema/bpmn">
+
+    <bpmn:process id="Process_1" isExecutable="true">
+
+        <bpmn:serviceTask id="Activity_1gfbbbp">
+            <bpmn:extensionElements>
+                <spiffworkflow:ServiceTaskOperator id="read_dataset" resultVariable="sap_result">
+                    <spiffworkflow:Parameters>
+                        <spiffworkflow:Parameter id="tableName" type="str" value="bkpf" />
+                    </spiffworkflow:Parameters>
+                </spiffworkflow:ServiceTaskOperator>
+            </bpmn:extensionElements>
+            <bpmn:incoming>Flow_1ful5f6</bpmn:incoming>
+            <bpmn:outgoing>Flow_0lonkti</bpmn:outgoing>
+        </bpmn:serviceTask>
+
+        <bpmn:startEvent id="Event_13kq4gj">
+            <bpmn:outgoing>Flow_1ful5f6</bpmn:outgoing>
+        </bpmn:startEvent>
+
+        <bpmn:sequenceFlow id="Flow_1ful5f6" sourceRef="Event_13kq4gj" targetRef="Activity_1gfbbbp" />
+
+        <bpmn:endEvent id="Event_0e71un5">
+            <bpmn:incoming>Flow_0lonkti</bpmn:incoming>
+        </bpmn:endEvent>
+
+        <bpmn:sequenceFlow id="Flow_0lonkti" sourceRef="Activity_1gfbbbp" targetRef="Event_0e71un5" />
+
+    </bpmn:process>
+
+    <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+        <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_1">
+            <bpmndi:BPMNShape id="Activity_0cmbi26_di" bpmnElement="Activity_1gfbbbp">
+                <dc:Bounds x="250" y="80" width="100" height="80" />
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="Event_13kq4gj_di" bpmnElement="Event_13kq4gj">
+                <dc:Bounds x="142" y="102" width="36" height="36" />
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="Event_0e71un5_di" bpmnElement="Event_0e71un5">
+                <dc:Bounds x="432" y="102" width="36" height="36" />
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNEdge id="Flow_1ful5f6_di" bpmnElement="Flow_1ful5f6">
+                <di:waypoint x="178" y="120" />
+                <di:waypoint x="250" y="120" />
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="Flow_0lonkti_di" bpmnElement="Flow_0lonkti">
+                <di:waypoint x="350" y="120" />
+                <di:waypoint x="432" y="120" />
+            </bpmndi:BPMNEdge>
+        </bpmndi:BPMNPlane>
+    </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>
