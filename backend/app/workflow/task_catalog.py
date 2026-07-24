@@ -10,7 +10,7 @@ class TaskCatalog:
     def __init__(self) -> None:
         self._definitions = self._load_definitions()
 
-    def _load_definitions():
+    def _load_definitions(self):
         with TASK_DEFINITIONS_PATH.open(
             "r",
             encoding="utf-8",
