@@ -29,3 +29,10 @@ def get_task_type_fields(task_type:str):
     fields = task_definition.get("fields") or []        
     
     return fields
+
+
+
+TEMP_REQUESTER_ID = "user-001"
+TEMP_REQUESTER_ROLES = ["USER"]
+
+@app.post("/api/process/apply")

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 from pydantic import BaseModel, Field
 
-# ==== Request Payload ====
+# ==== Workflow Payload ====
 class BaseWorkflowPayload(BaseModel):
     """모든 워크플로 페이로드의 기본 클래스"""
     def to_initial_data(self) -> dict[str, Any]:
@@ -14,8 +14,7 @@ class GatewayTestPayload(BaseWorkflowPayload):
 
 
 
-
-# ==== Reponse 구조 ====
+# ==== Workflow Reponse ====
 @dataclass(frozen=True, slots=True)
 class HumanTaskInfo:
     """Human Task 정보"""
@@ -34,3 +33,23 @@ class WorkflowExecutionResult:
     status: str
     data: dict[str, Any]
     human_tasks: tuple[HumanTaskInfo, ...]
+
+
+
+# ==== API Request Body ====
+class ProcessApplyRequest(BaseModel):
+    """BPMN XML 업로드 및 프로세스 실행"""
+    xml : str = Field(..., description="BPMN XML 문자열")
+
+
+
+
+# ==== API Response Body ====
+class ProcessApplyResponseData(BaseModel):
+    status : str
+
+class ProcessApplyResponse(BaseModel):
+    """프로세스 시작 API 응답 규격"""
+    code: str
+    message: str
+    data: ProcessApplyResponseData

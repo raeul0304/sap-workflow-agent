@@ -74,13 +74,12 @@ def read_dataset(tableName: str) -> List[Dict[str, Any]]:
 
 
 
-def prepare_voucher_input(amount, description, expense_type, requester_id) -> dict[str, Any]:
+def prepare_voucher_input(amount, description, expense_type) -> dict[str, Any]:
     """전표 생성에 필요한 사용자 입력값을 정리한다."""
     print("======== prepare_voucher_input Tool 실행 =========")
     print("amount", amount)
     print("description", description)
     print("expense_type", expense_type)
-    print("requester_id", requester_id)
 
     try:
         normalized_amount = Decimal(str(amount))
@@ -91,7 +90,6 @@ def prepare_voucher_input(amount, description, expense_type, requester_id) -> di
         "amount": str(normalized_amount),
         "description": description.strip(),
         "expense_type": expense_type.strip(),
-        "requester_id": requester_id.strip()
     }
 
 
