@@ -23,8 +23,8 @@ class WorkflowRegistry:
     def __init__(self) -> None:
         self._engines: dict[str, SpiffEngine] = {}
 
-    def register(self, workflow_type: str, engine: SpiffEngine) :
-        """워크플로 우형과 실행 엔진을 등록"""
+    def register(self, workflow_type: str, engine: SpiffEngine, force: bool = False) :
+        """워크플로 우형과 실행 엔진을 등록 (force 옵션: True일 경우 기존 등록된 엔진을 덮어씀. Admin 프로세스 업데이트 가능)"""
         
         workflow_type = workflow_type.strip()
         if not workflow_type:
@@ -34,6 +34,7 @@ class WorkflowRegistry:
             raise ValueError(f"이미 등록된 workflow_type입니다: {workflow_type}")
         
         self._engines[workflow_type] = engine
+        print(f"[Registry] '{workflow_type}' 워크플로가 배포(등록) 되었습니다.")
     
 
     def get(self, workflow_type: str) -> SpiffEngine:
