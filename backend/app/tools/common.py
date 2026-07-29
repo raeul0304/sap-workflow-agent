@@ -5,6 +5,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from psycopg2 import sql
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any, List, Dict
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
@@ -73,8 +74,33 @@ def read_dataset(tableName: str) -> List[Dict[str, Any]]:
 
 
 
+def prepare_voucher_input(amount, description, expense_type, requester_id) -> dict[str, Any]:
+    """전표 생성에 필요한 사용자 입력값을 정리한다."""
+    print("======== prepare_voucher_input Tool 실행 =========")
+    print("amount", amount)
+    print("description", description)
+    print("expense_type", expense_type)
+    print("requester_id", requester_id)
+
+    try:
+        normalized_amount = Decimal(str(amount))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("amount는 숫자 형식이어야 합니다.") from exc
+
+    return {
+        "amount": str(normalized_amount),
+        "description": description.strip(),
+        "expense_type": expense_type.strip(),
+        "requester_id": requester_id.strip()
+    }
+
+
+
+
+
 
 TOOL_REGISTRY = {
     "get_current_time": get_current_time,
     "read_dataset": read_dataset,
+    "voucher/prepareVoucherInput": prepare_voucher_input,
 }
