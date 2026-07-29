@@ -24,7 +24,7 @@ class WorkflowRegistry:
         self._engines: dict[str, SpiffEngine] = {}
 
     def register(self, workflow_type: str, engine: SpiffEngine, force: bool = False) :
-        """워크플로 우형과 실행 엔진을 등록 (force 옵션: True일 경우 기존 등록된 엔진을 덮어씀. Admin 프로세스 업데이트 가능)"""
+        """워크플로 유형과 실행 엔진을 등록 (force 옵션: True일 경우 기존 등록된 엔진을 덮어씀. Admin 프로세스 업데이트 가능)"""
         
         workflow_type = workflow_type.strip()
         if not workflow_type:

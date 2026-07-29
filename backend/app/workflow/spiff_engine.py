@@ -80,26 +80,44 @@ class ToolServiceEnvironment(TaskDataEnvironment):
 class SpiffEngine:
     """BPMN 워크플로 생성, 실행, Human Task 재개 담당"""
 
-    def __init__(self, *, bpmn_path: str | Path, process_id: str, store: InMemoryWorkflowStore = workflow_store) -> None:
-        self.bpmn_path = Path(bpmn_path)
+    def __init__(
+            self, 
+            *, 
+            bpmn_path: str | Path | None = None,
+            bpmn_xml: str | bytes | None = None,  
+            process_id: str, 
+            store: InMemoryWorkflowStore = workflow_store
+        ) -> None:
         self.process_id = process_id
         self.store = store
-        self._workflow_spec = self._load_workflow_spec()
+
+        if bpmn_xml:   # DB에서 불러온 XML 문자열 파싱
+            raw = bpmn_xml.encode('utf-8') if isinstance(bpmn_xml, str) else bpmn_xml
+
+        elif bpmn_path: # 물리적 파일 파싱
+            self.bpmn_path = Path(bpmn_path)
+            if not self.bpmn_path.is_file():
+                        raise FileNotFoundError(f"BPMN 파일을 찾을 수 없습니다: {self.bpmn_path}")
+            raw = self.bpmn_path.read_bytes()
+
+        else:
+            raise ValueError("bpmn_path, bpmn_xml 중 하나는 반드시 제공되어야 합니다.")
+
+        self._workflow_spec = self._load_workflow_spec(raw)
+
     
-    def _load_workflow_spec(self):
+    def _load_workflow_spec(self, raw):
         """BPMN XML을 파싱하여 WorkflowSpec을 생성(실행 명세)"""
-        if not self.bpmn_path.is_file():
-            raise FileNotFoundError(f"BPMN 파일을 찾을 수 없습니다: {self.bpmn_path}")
         
-        raw = self.bpmn_path.read_bytes()
         normalized = self._normalize_spiff_tags(raw)
-        
         parser = SpiffBpmnParser()
-        with self.bpmn_path.open("rb") as bpmn_file:
-            parser.add_bpmn_io(
-                io.BytesIO(normalized),
-                filename=str(self.bpmn_path),
-            )
+
+        filename = str(self.bpmn_path) if hasattr(self, 'bpmn_path') else "db_or_memory_bpmn.xml"
+        
+        parser.add_bpmn_io(
+            io.BytesIO(normalized),
+            filename=filename,
+        )
 
         return parser.get_spec(self.process_id)
     
