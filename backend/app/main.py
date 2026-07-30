@@ -1,13 +1,20 @@
+import asyncio
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from contextlib import asynccontextmanager
 from app.workflow.task_catalog import task_catalog
 from app.workflow.schemas import ProcessApplyResponseData, ProcessApplyRequest, ProcessApplyResponse
 from app.workflow.spiff_engine import SpiffEngine, run_workflow
 from app.workflow.registry import WorkflowRegistry
 from app.workflow.events import event_manager
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    event_manager.set_event_loop(asyncio.get_running_loop())
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

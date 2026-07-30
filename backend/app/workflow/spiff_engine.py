@@ -162,19 +162,24 @@ class SpiffEngine:
 
     def _execute_and_publish_event(self, workflow_id, workflow) -> None:
         """엔진을 스텝 단위로 실행하며 SSE 이벤트 발행"""
-        while True:
-            executed_tasks = workflow.do_engine_step()
-
-            if not executed_tasks:
-                break
-
-            for task in executed_tasks:
-                event_manager.publish_sync(workflow_id, {
-                    "type": "TASK_COMPLETED",
-                    "task_id": str(task.id),
-                    "task_name": task.task_spec.name or task.task_spec.bpmn_id,
-                    "state": task.state.name
-                })
+        # 1. 실행 전 완료된 태스크 ID 스냅샷 (비교용)
+        before_completed = {task.id for task in workflow.get_tasks(state=TaskState.COMPLETED)}
+        
+        # 2. SpiffWorkflow 공식 메서드: 자동 태스크(Service 등)를 대기(Human) 또는 끝까지 일괄 실행
+        workflow.do_engine_steps()
+        
+        # 3. 실행 후 새로 완료된 태스크 추출 (이번 턴에 실행된 태스크들)
+        after_tasks = workflow.get_tasks(state=TaskState.COMPLETED)
+        newly_completed = [t for t in after_tasks if t.id not in before_completed]
+        
+        # 4. 프론트엔드로 이번에 완료된 태스크들만 브로드캐스트
+        for task in newly_completed:
+            event_manager.publish_sync(workflow_id, {
+                "type": "TASK_COMPLETED",
+                "task_id": str(task.id),
+                "task_name": task.task_spec.name or task.task_spec.bpmn_id,
+                "state": "COMPLETED"
+            })
 
 
     def start(
