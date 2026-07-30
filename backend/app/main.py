@@ -1,10 +1,21 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from app.workflow.task_catalog import task_catalog
 from app.workflow.schemas import ProcessApplyResponseData, ProcessApplyRequest, ProcessApplyResponse
 from app.workflow.spiff_engine import SpiffEngine, run_workflow
 from app.workflow.registry import WorkflowRegistry
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 모든 주소(프론트엔드)에서의 접근 허용
+    allow_credentials=True,
+    allow_methods=["*"],  # GET, POST, OPTIONS 등 모든 통신 방식 허용
+    allow_headers=["*"],  # 모든 헤더 허용
+)
+
+
 workflow_registry = WorkflowRegistry() # 실제 가동 시 DB에서 기존 등록된 워크플로를 꺼내와 여기에 적재
 
 
