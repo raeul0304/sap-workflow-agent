@@ -137,7 +137,58 @@ class SpiffEngine:
     def _create_script_engine() -> PythonScriptEngine:
         """SpiffWorkflow의 PythonScriptEngine을 생성 - script task, gateway, service task에서 사용할 실행 환경 생성"""
         return PythonScriptEngine(environment=ToolServiceEnvironment())
-    
+
+
+
+    @staticmethod
+    def _get_task_type(task: Task) -> str:
+        """SpiffWorkflow Task를 프론트 표시용 유형으로 변환."""
+
+        class_name = task.task_spec.__class__.__name__.upper()
+
+        if task.task_spec.manual:
+            return "USER_TASK"
+
+        if "SERVICE" in class_name:
+            return "SERVICE_TASK"
+
+        if "SCRIPT" in class_name:
+            return "SCRIPT_TASK"
+
+        return "ENGINE_TASK"
+
+    @staticmethod
+    def _get_task_bpmn_id(task: Task) -> str:
+        return (
+            getattr(task.task_spec, "bpmn_id", None)
+            or task.task_spec.name
+            or str(task.id)
+        )
+
+    def _publish_task_event(
+        self,
+        *,
+        workflow_id: str,
+        task: Task,
+        event_type: str,
+    ) -> None:
+        event_manager.publish_sync(
+            workflow_id,
+            {
+                "type": event_type,
+                "event_type": event_type,
+                "task_id": str(task.id),
+                "bpmn_id": self._get_task_bpmn_id(task),
+                "task_name": (
+                    task.task_spec.name
+                    or self._get_task_bpmn_id(task)
+                ),
+                "task_type": self._get_task_type(task),
+                "state": event_type.removeprefix("TASK_"),
+            },
+        )
+
+
 
     def _initialize_workflow(self, requester_id: str, requester_roles: Iterable[str], initial_data: dict[str, Any] | None) -> BpmnWorkflow:
         """워크플로 실행에 필요한 초기 데이터 세팅 및 인스턴스 생성"""
@@ -160,27 +211,165 @@ class SpiffEngine:
         return workflow
 
 
-    def _execute_and_publish_event(self, workflow_id, workflow) -> None:
-        """엔진을 스텝 단위로 실행하며 SSE 이벤트 발행"""
-        # 1. 실행 전 완료된 태스크 ID 스냅샷 (비교용)
-        before_completed = {task.id for task in workflow.get_tasks(state=TaskState.COMPLETED)}
-        
-        # 2. SpiffWorkflow 공식 메서드: 자동 태스크(Service 등)를 대기(Human) 또는 끝까지 일괄 실행
-        workflow.do_engine_steps()
-        
-        # 3. 실행 후 새로 완료된 태스크 추출 (이번 턴에 실행된 태스크들)
-        after_tasks = workflow.get_tasks(state=TaskState.COMPLETED)
-        newly_completed = [t for t in after_tasks if t.id not in before_completed]
-        
-        # 4. 프론트엔드로 이번에 완료된 태스크들만 브로드캐스트
-        for task in newly_completed:
-            event_manager.publish_sync(workflow_id, {
-                "type": "TASK_COMPLETED",
-                "task_id": str(task.id),
-                "task_name": task.task_spec.name or task.task_spec.bpmn_id,
-                "state": "COMPLETED"
-            })
+    def _execute_and_publish_event(
+            self,
+            workflow_id: str,
+            workflow: BpmnWorkflow,
+        ) -> None:
+            """자동 Task를 실행하고 Task 실행 이벤트를 발행."""
 
+            before_completed_ids = {
+                str(task.id)
+                for task in workflow.get_tasks(state=TaskState.COMPLETED)
+            }
+
+            started_task_ids: set[str] = set()
+
+            def before_task_completed(task: Task) -> bool:
+                """
+                SpiffWorkflow가 자동 Task를 완료하기 직전에 호출한다.
+
+                TASK_STARTED는 실제 실행 직전에 발행한다.
+                True를 반환해야 Task 실행을 계속한다.
+                """
+
+                task_id = str(task.id)
+                task_type = self._get_task_type(task)
+
+                # Start/End/Gateway 등 엔진 내부 Task는 화면 표시에서 제외
+                if (
+                    task_type != "ENGINE_TASK"
+                    and task_id not in started_task_ids
+                ):
+                    self._publish_task_event(
+                        workflow_id=workflow_id,
+                        task=task,
+                        event_type="TASK_STARTED",
+                    )
+                    started_task_ids.add(task_id)
+
+                return True
+
+            workflow.do_engine_steps(
+                will_complete_task=before_task_completed
+            )
+
+            after_completed_tasks = workflow.get_tasks(
+                state=TaskState.COMPLETED
+            )
+
+            newly_completed_tasks = [
+                task
+                for task in after_completed_tasks
+                if str(task.id) not in before_completed_ids
+            ]
+
+            for task in newly_completed_tasks:
+                if self._get_task_type(task) == "ENGINE_TASK":
+                    continue
+
+                self._publish_task_event(
+                    workflow_id=workflow_id,
+                    task=task,
+                    event_type="TASK_COMPLETED",
+                )
+
+            # 자동 Task 실행 후 READY 상태로 남은 User Task 발행
+            for task in workflow.get_tasks(state=TaskState.READY):
+                if not task.task_spec.manual:
+                    continue
+
+                self._publish_task_event(
+                    workflow_id=workflow_id,
+                    task=task,
+                    event_type="TASK_STARTED",
+                )
+
+                self._publish_task_event(
+                    workflow_id=workflow_id,
+                    task=task,
+                    event_type="TASK_WAITING",
+                )
+
+
+    def create_instance(
+        self,
+        *,
+        requester_id: str,
+        requester_roles: Iterable[str],
+        initial_data: dict[str, Any] | None = None,
+    ) -> str:
+        """워크플로 인스턴스만 생성하고 아직 실행하지 않는다."""
+
+        workflow = self._initialize_workflow(
+            requester_id=requester_id,
+            requester_roles=requester_roles,
+            initial_data=initial_data,
+        )
+
+        workflow_id = self.store.create(workflow)
+        self.store.save(workflow_id, workflow)
+
+        return workflow_id
+
+    def run_instance(
+        self,
+        *,
+        workflow_id: str,
+    ) -> WorkflowExecutionResult:
+        """이미 생성한 워크플로 인스턴스를 실행한다."""
+
+        workflow = self.store.get(workflow_id)
+
+        event_manager.publish_sync(
+            workflow_id,
+            {
+                "type": "WORKFLOW_STARTED",
+                "event_type": "WORKFLOW_STARTED",
+                "status": "RUNNING",
+            },
+        )
+
+        try:
+            self._execute_and_publish_event(
+                workflow_id=workflow_id,
+                workflow=workflow,
+            )
+
+            self.store.save(workflow_id, workflow)
+
+            result = self._build_result(
+                workflow_id=workflow_id,
+                workflow=workflow,
+            )
+
+            event_manager.publish_sync(
+                workflow_id,
+                {
+                    "type": "WORKFLOW_STATUS_UPDATE",
+                    "event_type": "WORKFLOW_STATUS_UPDATE",
+                    "status": result.status,
+                },
+            )
+
+            return result
+
+        except Exception as exc:
+            workflow.data["workflow_status"] = "FAILED"
+            workflow.data["error"] = str(exc)
+            self.store.save(workflow_id, workflow)
+
+            event_manager.publish_sync(
+                workflow_id,
+                {
+                    "type": "WORKFLOW_STATUS_UPDATE",
+                    "event_type": "WORKFLOW_STATUS_UPDATE",
+                    "status": "FAILED",
+                    "error": str(exc),
+                },
+            )
+
+            raise
 
     def start(
         self,
@@ -189,54 +378,71 @@ class SpiffEngine:
         requester_roles: Iterable[str],
         initial_data: dict[str, Any] | None = None,
     ) -> WorkflowExecutionResult:
-        """워크플로를 새로 시작하고 Human Task에 도달할 때까지 실행."""
+        """
+        기존 호출부와의 호환성을 위한 함수.
 
-        # 초기화
-        workflow = self._initialize_workflow(requester_id, requester_roles, initial_data)
-        workflow_id = self.store.create(workflow)
+        신규 API에서는 create_instance()와 run_instance()를
+        나누어 호출한다.
+        """
 
-        # 시작 이벤트 알림
-        event_manager.publish_sync(workflow_id, {"type": "WORKFLOW_STARTED", "workflow_id": workflow_id})
+        workflow_id = self.create_instance(
+            requester_id=requester_id,
+            requester_roles=requester_roles,
+            initial_data=initial_data,
+        )
 
-        # 엔진 구ㅈ동 및 이벤트 발행
-        self._execute_and_publish_event(workflow_id, workflow)
-
-        # 마무리 및 결과 저장
-        self.store.save(workflow_id, workflow)
-        result = self._build_result(workflow_id=workflow_id, workflow=workflow)
-
-        event_manager.publish_sync(workflow_id, {
-            "type": "WORKFLOW_STATUS_UPDATE",
-            "status": result.status
-        })
-
-        return result
+        return self.run_instance(workflow_id=workflow_id)
     
 
-    def complete_human_task(self, *, workflow_id: str, task_id: str, actor_roles: Iterable[str], task_data: Mapping[str, Any]) -> WorkflowExecutionResult:
-        """Human Task에 사용자 입력을 반영하고 워크플로를 재개 - Human Task 수행 권한 검증 후, Task 완료 및 엔진 재개"""
-        
-        workflow = self.store.get(workflow_id)
-        task = self._find_ready_human_task(workflow=workflow, workflow_id=workflow_id, task_id=task_id)
+    def complete_human_task(
+        self,
+        *,
+        workflow_id: str,
+        task_id: str,
+        actor_roles: Iterable[str],
+        task_data: Mapping[str, Any],
+    ) -> WorkflowExecutionResult:
+        """User Task를 완료하고 워크플로 실행을 재개한다."""
 
-        # Lane 및 Task 수행 권한 검증
+        workflow = self.store.get(workflow_id)
+
+        task = self._find_ready_human_task(
+            workflow=workflow,
+            workflow_id=workflow_id,
+            task_id=task_id,
+        )
+
         ensure_task_access(task, actor_roles)
 
-        # 사용자 입력을 Task Data에 반영
         task.data.update(dict(task_data))
-
-        # 현재 Human Task 완료
         task.run()
 
-        self._execute_and_publish_event(workflow_id, workflow)
-        self.store.save(workflow_id, workflow)
-        result = self._build_result(workflow_id=workflow_id, workflow=workflow)
+        self._publish_task_event(
+            workflow_id=workflow_id,
+            task=task,
+            event_type="TASK_COMPLETED",
+        )
 
-        # Human Task 후 상태 업데이트 이벤트
-        event_manager.publish_sync(workflow_id, {
-            "type": "WORKFLOW_STATUS_UPDATE",
-            "status": result.status
-        })
+        self._execute_and_publish_event(
+            workflow_id=workflow_id,
+            workflow=workflow,
+        )
+
+        self.store.save(workflow_id, workflow)
+
+        result = self._build_result(
+            workflow_id=workflow_id,
+            workflow=workflow,
+        )
+
+        event_manager.publish_sync(
+            workflow_id,
+            {
+                "type": "WORKFLOW_STATUS_UPDATE",
+                "event_type": "WORKFLOW_STATUS_UPDATE",
+                "status": result.status,
+            },
+        )
 
         return result
     
@@ -316,6 +522,17 @@ def run_workflow(
 
     return engine.start(requester_id=requester_id, requester_roles=requester_roles, initial_data=initial_data)
 
+def run_created_workflow(
+    *,
+    registry: WorkflowRegistry,
+    workflow_type: str,
+    workflow_id: str,
+) -> WorkflowExecutionResult:
+    """API에서 미리 만든 워크플로 인스턴스를 백그라운드에서 실행."""
+
+    engine = registry.get(workflow_type)
+
+    return engine.run_instance(workflow_id=workflow_id)
 
 def resume_workflow(
         *, 
