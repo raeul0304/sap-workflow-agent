@@ -10,10 +10,10 @@ class WorkflowEventManager:
     """워크플로 실행 상태를 SSE로 브로드캐스트 하기 위한 이벤트 큐 매니저"""
 
     def __init__(self) -> None:
-        self.subscribers: dict[str, set[asyncio.Queue]] = {}
+        self._subscribers: dict[str, set[asyncio.Queue]] = {}
         self._history: dict[str, list[str]] = defaultdict(list)
         self._event_sequences: dict[str, int] = defaultdict(int)
-        self.loop: asyncio.AbstractEventLoop | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         # BackgroundTasks 작업 스레드와 메인 이벤트 루프 간 동기화
         self._lock = RLock()
 
