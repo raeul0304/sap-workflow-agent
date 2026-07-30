@@ -18,6 +18,7 @@ from app.workflow.lanes import get_task_lane_info
 from app.workflow.store import InMemoryWorkflowStore, workflow_store
 from app.workflow.registry import WorkflowRegistry
 from app.workflow.schemas import BaseWorkflowPayload, HumanTaskInfo, WorkflowExecutionResult
+from app.workflow.events import event_manager
 
 
 # ===== Custom Exceptions =====
@@ -138,6 +139,44 @@ class SpiffEngine:
         return PythonScriptEngine(environment=ToolServiceEnvironment())
     
 
+    def _initialize_workflow(self, requester_id: str, requester_roles: Iterable[str], initial_data: dict[str, Any] | None) -> BpmnWorkflow:
+        """워크플로 실행에 필요한 초기 데이터 세팅 및 인스턴스 생성"""
+        normalize_requester_roles = normalize_roles(requester_roles)
+        workflow_data = {
+            "requester_id": requester_id,
+            "requester_roles": sorted(normalize_requester_roles),
+            "workflow_status" : "RUNNING"
+        }
+
+        if initial_data:
+            workflow_data.update(initial_data)
+
+        workflow = BpmnWorkflow(
+            self._workflow_spec,
+            script_engine = self._create_script_engine()
+        )
+        workflow.task_tree.set_data(**workflow_data)
+
+        return workflow
+
+
+    def _execute_and_publish_event(self, workflow_id, workflow) -> None:
+        """엔진을 스텝 단위로 실행하며 SSE 이벤트 발행"""
+        while True:
+            executed_tasks = workflow.do_engine_step()
+
+            if not executed_tasks:
+                break
+
+            for task in executed_tasks:
+                event_manager.publish_sync(workflow_id, {
+                    "type": "TASK_COMPLETED",
+                    "task_id": str(task.id),
+                    "task_name": task.task_spec.name or task.task_spec.bpmn_id,
+                    "state": task.state.name
+                })
+
+
     def start(
         self,
         *,
@@ -147,34 +186,26 @@ class SpiffEngine:
     ) -> WorkflowExecutionResult:
         """워크플로를 새로 시작하고 Human Task에 도달할 때까지 실행."""
 
-        normalized_requester_roles = normalize_roles(requester_roles)
-
-        workflow_data = {
-            "requester_id": requester_id,
-            "requester_roles": sorted(normalized_requester_roles),
-            "workflow_status": "RUNNING",
-        }
-
-        if initial_data:
-            workflow_data.update(initial_data)
-
-         # 현재 설치된 SpiffWorkflow 버전은 data 인자를 지원하지 않음
-        workflow = BpmnWorkflow(
-            self._workflow_spec,
-            script_engine=self._create_script_engine(),
-        )
-
-        # Task 간에 전달될 실행 데이터를 시작 Task에 설정
-        workflow.task_tree.set_data(**workflow_data)
-
-        workflow.do_engine_steps()
-
+        # 초기화
+        workflow = self._initialize_workflow(requester_id, requester_roles, initial_data)
         workflow_id = self.store.create(workflow)
 
-        return self._build_result(
-            workflow_id=workflow_id,
-            workflow=workflow,
-        )
+        # 시작 이벤트 알림
+        event_manager.publish_sync(workflow_id, {"type": "WORKFLOW_STARTED", "workflow_id": workflow_id})
+
+        # 엔진 구ㅈ동 및 이벤트 발행
+        self._execute_and_publish_event(workflow_id, workflow)
+
+        # 마무리 및 결과 저장
+        self.store.save(workflow_id, workflow)
+        result = self._build_result(workflow_id=workflow_id, workflow=workflow)
+
+        event_manager.publish_sync(workflow_id, {
+            "type": "WORKFLOW_STATUS_UPDATE",
+            "status": result.status
+        })
+
+        return result
     
 
     def complete_human_task(self, *, workflow_id: str, task_id: str, actor_roles: Iterable[str], task_data: Mapping[str, Any]) -> WorkflowExecutionResult:
@@ -192,11 +223,17 @@ class SpiffEngine:
         # 현재 Human Task 완료
         task.run()
 
-        # 자동 Task 실행
-        workflow.do_engine_steps()
+        self._execute_and_publish_event(workflow_id, workflow)
         self.store.save(workflow_id, workflow)
+        result = self._build_result(workflow_id=workflow_id, workflow=workflow)
 
-        return self._build_result(workflow_id=workflow_id, workflow=workflow)
+        # Human Task 후 상태 업데이트 이벤트
+        event_manager.publish_sync(workflow_id, {
+            "type": "WORKFLOW_STATUS_UPDATE",
+            "status": result.status
+        })
+
+        return result
     
 
     @staticmethod
