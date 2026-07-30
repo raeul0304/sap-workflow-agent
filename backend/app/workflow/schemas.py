@@ -46,7 +46,9 @@ class ProcessApplyRequest(BaseModel):
 
 # ==== API Response Body ====
 class ProcessApplyResponseData(BaseModel):
+    workflow_id: str
     status : str
+    events_url: str
 
 class ProcessApplyResponse(BaseModel):
     """프로세스 시작 API 응답 규격"""
