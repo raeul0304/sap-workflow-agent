@@ -88,8 +88,8 @@ def prepare_voucher_input(amount, description, expense_type) -> dict[str, Any]:
 
     return {
         "amount": str(normalized_amount),
-        "description": description.strip(),
-        "expense_type": expense_type.strip(),
+        "description": str(description).strip(),
+        "expense_type": str(expense_type).strip(),
     }
 
 

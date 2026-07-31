@@ -11,6 +11,7 @@ from SpiffWorkflow.bpmn.workflow import BpmnWorkflow
 from SpiffWorkflow.bpmn.script_engine import PythonScriptEngine, TaskDataEnvironment
 from SpiffWorkflow.task import Task
 from SpiffWorkflow.util.task import TaskState
+from SpiffWorkflow.bpmn.specs.bpmn_task_spec import BpmnTaskSpec
 
 from app.tools.common import TOOL_REGISTRY
 from app.auth.guardian import ensure_task_access, normalize_roles
@@ -225,54 +226,72 @@ class SpiffEngine:
 
             started_task_ids: set[str] = set()
 
+            BPMN_ELEMENT_TYPES = {
+                "StartEvent",
+                "EndEvent", 
+                "ServiceTask",
+                "UserTask",
+                "ScriptTask",
+                "ExclusiveGateway",
+                "ParallelGateway",
+                "InclusiveGateway",
+            }
+            
+
             def before_task_completed(task: Task) -> bool:
                 """
                 SpiffWorkflow가 자동 Task를 완료하기 직전에 호출한다.
-
-                TASK_STARTED는 실제 실행 직전에 발행한다.
-                True를 반환해야 Task 실행을 계속한다.
                 """
+                print(f"[DEBUG] task spec type: {type(task.task_spec).__name__}, name: {task.task_spec.bpmn_name or task.task_spec.name}")
+                type_name = type(task.task_spec).__name__
 
-                task_id = str(task.id)
-                task_type = self._get_task_type(task)
-
-                # Start/End/Gateway 등 엔진 내부 Task는 화면 표시에서 제외
-                if (
-                    task_type != "ENGINE_TASK"
-                    and task_id not in started_task_ids
-                ):
-                    self._publish_task_event(
-                        workflow_id=workflow_id,
-                        task=task,
-                        event_type="TASK_STARTED",
-                    )
-                    started_task_ids.add(task_id)
-
-                return True
-
-            workflow.do_engine_steps(
-                will_complete_task=before_task_completed
-            )
-
-            after_completed_tasks = workflow.get_tasks(
-                state=TaskState.COMPLETED
-            )
-
-            newly_completed_tasks = [
-                task
-                for task in after_completed_tasks
-                if str(task.id) not in before_completed_ids
-            ]
-
-            for task in newly_completed_tasks:
-                if self._get_task_type(task) == "ENGINE_TASK":
-                    continue
+                if type_name not in BPMN_ELEMENT_TYPES:
+                    return True
 
                 self._publish_task_event(
                     workflow_id=workflow_id,
                     task=task,
-                    event_type="TASK_COMPLETED",
+                    event_type="TASK_STARTED",
                 )
+
+                return True
+
+            def after_task_completed(task: Task) -> None:
+                type_name = type(task.task_spec).__name__
+                print(f"[DEBUG] after_task_completed - type: {type_name}, name: {task.task_spec.bpmn_name or task.task_spec.name}")
+                if type_name not in BPMN_ELEMENT_TYPES:
+                    return
+
+                self._publish_task_event(
+                    workflow_id=workflow_id,
+                    task=task,
+                    event_type="TASK_COMPLETED"
+                )
+
+            workflow.do_engine_steps(
+                will_complete_task=before_task_completed,
+                did_complete_task=after_task_completed
+            )
+
+            # after_completed_tasks = workflow.get_tasks(
+            #     state=TaskState.COMPLETED
+            # )
+
+            # newly_completed_tasks = [
+            #     task
+            #     for task in after_completed_tasks
+            #     if str(task.id) not in before_completed_ids
+            # ]
+
+            # for task in newly_completed_tasks:
+            #     if self._get_task_type(task) == "ENGINE_TASK":
+            #         continue
+
+            #     self._publish_task_event(
+            #         workflow_id=workflow_id,
+            #         task=task,
+            #         event_type="TASK_COMPLETED",
+            #     )
 
             # 자동 Task 실행 후 READY 상태로 남은 User Task 발행
             for task in workflow.get_tasks(state=TaskState.READY):
@@ -308,9 +327,10 @@ class SpiffEngine:
         )
 
         workflow_id = self.store.create(workflow)
-        self.store.save(workflow_id, workflow)
+        #self.store.save(workflow_id, workflow)
 
         return workflow_id
+
 
     def run_instance(
         self,

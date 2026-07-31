@@ -19,6 +19,7 @@ from app.workflow.schemas import (
 )
 from app.workflow.spiff_engine import (
     SpiffEngine,
+    run_workflow,
     run_created_workflow,
 )
 from app.workflow.task_catalog import task_catalog
@@ -131,6 +132,7 @@ async def apply_process(
             status_code=500,
             detail=f"프로세스 배포 및 실행 중 오류 발생: {exc}",
         ) from exc
+
 
 
 @app.get("/api/process/stream/{workflow_id}")

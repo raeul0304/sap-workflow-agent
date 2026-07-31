@@ -30,7 +30,7 @@ class WorkflowRegistry:
         if not workflow_type:
             raise ValueError("workflow_type은 비어있을 수 없습니다.")
         
-        if workflow_type in self._engines:
+        if workflow_type in self._engines and not force:
             raise ValueError(f"이미 등록된 workflow_type입니다: {workflow_type}")
         
         self._engines[workflow_type] = engine

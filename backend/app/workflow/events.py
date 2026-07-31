@@ -14,11 +14,11 @@ class WorkflowEventManager:
         self._history: dict[str, list[str]] = defaultdict(list)
         self._event_sequences: dict[str, int] = defaultdict(int)
         self._loop: asyncio.AbstractEventLoop | None = None
-        # BackgroundTasks 작업 스레드와 메인 이벤트 루프 간 동기화
         self._lock = RLock()
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
-        self.loop = loop
+        self._loop = loop
+
 
     def subscribe(
         self,
@@ -30,11 +30,16 @@ class WorkflowEventManager:
         queue: asyncio.Queue[str] = asyncio.Queue()
 
         with self._lock:
-            self._subscribers[workflow_id].add(queue)
+            self._subscribers.setdefault(workflow_id, set()).add(queue)
             history = list(self._history.get(workflow_id, []))
+
+        print(f"[SSE] 클라이언트 구독 시작 - workflow_id : {workflow_id}")
+        print(f"[SSE] history 누적 이벤트 수 : {len(history)}개")
 
         for message in history:
             event = json.loads(message)
+
+            print(f"[SSE] history: event_id: {event.get('event_id')}, type: {event.get('event_type')}")
 
             if (
                 last_event_id is not None
@@ -45,6 +50,7 @@ class WorkflowEventManager:
             queue.put_nowait(message)
 
         return queue
+
 
     def unsubscribe(
         self,
